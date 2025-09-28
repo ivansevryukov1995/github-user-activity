@@ -26,7 +26,7 @@ build:
 ## run: run the application
 .PHONY: run
 run: build
-	${build_dir}/${binary_name} ivan
+	${build_dir}/${binary_name} ivansevryukov1995
 
 ## clean: clean dir bin
 .PHONY: clean
