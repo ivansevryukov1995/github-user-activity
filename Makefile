@@ -38,4 +38,4 @@ clean: confirm
 .PHONY: debug
 debug:
 	DEBUG=1 $(MAKE) build
-	dlv exec $(build_dir)/$(binary_name) -- ivan
+	dlv exec $(build_dir)/$(binary_name) -- ivansevryukov1995
