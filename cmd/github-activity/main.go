@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
 	"time"
 )
 
@@ -29,13 +30,18 @@ func main() {
 	flag.Parse()
 	args := flag.Args()
 
-	if err := run(args, os.Stdout); err != nil {
+	ctx := context.Background()
+
+	if err := run(ctx, args, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func run(args []string, out io.Writer) error {
+func run(ctx context.Context, args []string, out io.Writer) error {
+	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt)
+	defer cancel()
+
 	if len(args) != 1 {
 		return errors.New("Ukazhite odno imya user-github")
 	}
@@ -46,7 +52,7 @@ func run(args []string, out io.Writer) error {
 
 	urlEvents := fmt.Sprintf(githubEvents, args[0])
 
-	req, err := http.NewRequestWithContext(context.TODO(), http.MethodGet, urlEvents, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlEvents, nil)
 	if err != nil {
 		return err
 	}
@@ -68,7 +74,7 @@ func run(args []string, out io.Writer) error {
 	}
 
 	for _, e := range ev {
-		fmt.Fprintln(out, e)
+		fmt.Fprintln(out, e.Type)
 	}
 
 	return nil
