@@ -3,78 +3,90 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
+
+	"github.com/ivansevryukov1995/github-user-activity/internal/model"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 var githubEvents = "https://api.github.com/users/%s/events"
 
-type Event struct {
-	ID    string `json:"id"`
-	Type  string `json:"type"`
-	Actor struct {
-		Login string `json:"login"`
-	} `json:"actor"`
-	Repo struct {
-		Name string `json:"name"`
-	} `json:"repo"`
-}
-
 func main() {
 	flag.Parse()
 	args := flag.Args()
+	if len(args) != 1 {
+		log.Fatal("Need one name user-github")
+	}
 
-	ctx := context.Background()
-
-	if err := run(ctx, args, os.Stdout); err != nil {
+	if err := run(args[0], os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context, args []string, out io.Writer) error {
-	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt)
+func run(user string, out io.Writer) error {
+	// graceful shutdown
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	if len(args) != 1 {
-		return errors.New("Ukazhite odno imya user-github")
-	}
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		sig := <-sigChan
+		log.Printf("Received signal: %v, shutting down gracefully...", sig)
+		cancel()
+	}()
 
 	client := &http.Client{
-		Timeout: time.Duration(time.Second * 10),
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:        10,
+			IdleConnTimeout:     30 * time.Second,
+			TLSHandshakeTimeout: 5 * time.Second,
+		},
 	}
 
-	urlEvents := fmt.Sprintf(githubEvents, args[0])
+	urlEvents := fmt.Sprintf(githubEvents, user)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlEvents, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create request: %w", err)
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("request failed: %w", err)
 	}
 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return errors.New(fmt.Sprintf("Status code: %v", resp.StatusCode))
+		return fmt.Errorf("status code: %v", resp.StatusCode)
 	}
 
-	var ev []Event
-	if err := json.NewDecoder(resp.Body).Decode(&ev); err != nil {
-		return err
+	var event []model.Event
+	if err := json.NewDecoder(resp.Body).Decode(&event); err != nil {
+		return fmt.Errorf("failed decode: %w", err)
 	}
 
-	for _, e := range ev {
-		fmt.Fprintln(out, e.Type)
+	caser := cases.Title(language.English)
+	fmt.Fprintln(out, "Output:")
+	for _, e := range event {
+		fmt.Fprint(out, "- ")
+
+		action := caser.String(e.Payload.Action)
+		fmt.Fprintln(out, action, e.Type, e.Repo.Name)
+		// fmt.Fprintln(out, e)
 	}
 
 	return nil
