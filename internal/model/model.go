@@ -18,7 +18,9 @@ type Repo struct {
 }
 
 type Payload struct {
-	Action string `json:"action"`
+	Ref     string `json:"ref,omitempty"`
+	RefType string `json:"ref_type,omitempty"`
+	Action  string `json:"action,omitempty"`
 }
 
 type Event struct {

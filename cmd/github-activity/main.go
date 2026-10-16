@@ -10,15 +10,18 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/ivansevryukov1995/github-user-activity/internal/model"
-	"golang.org/x/text/cases"
-	"golang.org/x/text/language"
+	"github.com/ivansevryukov1995/github-user-activity/internal/pkg"
 )
 
-var githubEvents = "https://api.github.com/users/%s/events"
+var (
+	githubEvents = "https://api.github.com/users/%s/events"
+	countEvents  = 300
+)
 
 func main() {
 	flag.Parse()
@@ -74,19 +77,28 @@ func run(user string, out io.Writer) error {
 		return fmt.Errorf("status code: %v", resp.StatusCode)
 	}
 
-	var event []model.Event
-	if err := json.NewDecoder(resp.Body).Decode(&event); err != nil {
+	events := make([]model.Event, countEvents)
+	if err := json.NewDecoder(resp.Body).Decode(&events); err != nil {
 		return fmt.Errorf("failed decode: %w", err)
 	}
 
-	caser := cases.Title(language.English)
-	fmt.Fprintln(out, "Output:")
-	for _, e := range event {
-		fmt.Fprint(out, "- ")
+	repoStat := make(map[string]map[model.Payload]int, countEvents)
 
-		action := caser.String(e.Payload.Action)
-		fmt.Fprintln(out, action, e.Type, e.Repo.Name)
-		// fmt.Fprintln(out, e)
+	for _, e := range events {
+		event := strings.TrimSuffix(e.Type, "Event")
+
+		if repoStat[e.Repo.Name] == nil {
+			repoStat[e.Repo.Name] = make(map[model.Payload]int)
+		}
+
+		payload := model.ConvertPayload(event, e)
+
+		repoStat[e.Repo.Name][payload]++
+	}
+
+	err = pkg.RenderRepoStatUser(out, repoStat)
+	if err != nil {
+		return fmt.Errorf("failed render repository statistic user: %w", err)
 	}
 
 	return nil
