@@ -12,22 +12,34 @@ import (
 	"github.com/ivansevryukov1995/github-user-activity/internal/model"
 )
 
-const CacheTTL = 60 * time.Second
+type Cache struct {
+	nameFile string
+	cacheTTL time.Duration
+}
 
-func CacheFilePath() (string, error) {
+func NewCache(nameApp string, nameFile string, cacheTTL time.Duration) (*Cache, error) {
+	name, err := CacheFilePath(nameApp, nameFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed init cache: %w", err)
+	}
+
+	return &Cache{nameFile: name, cacheTTL: cacheTTL}, nil
+}
+
+func CacheFilePath(nameApp string, nameFile string) (string, error) {
 	dir, err := os.UserCacheDir()
 	if err != nil {
 		return "", fmt.Errorf("failed get directory cache: %w", err)
 	}
 
-	dir = filepath.Join(dir, "github-activity")
+	dir = filepath.Join(dir, nameApp) //"github-activity"
 
 	err = os.MkdirAll(dir, 0755)
 	if err != nil {
 		return "", fmt.Errorf("failed create directory cache: %w", err)
 	}
 
-	file := filepath.Join(dir, "cache.json")
+	file := filepath.Join(dir, nameFile) //"cache.json"
 
 	f, err := os.OpenFile(file, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
@@ -38,8 +50,15 @@ func CacheFilePath() (string, error) {
 	return file, nil
 }
 
-func GetCache(nameFile, nameUser string) ([]model.Event, bool, error) {
-	file, err := os.Open(nameFile)
+func (c *Cache) NameFile() string {
+	return c.nameFile
+}
+func (c *Cache) CacheTTL() time.Duration {
+	return c.cacheTTL
+}
+
+func (c *Cache) GetCache(nameUser string) ([]model.Event, bool, error) {
+	file, err := os.Open(c.NameFile())
 	if err != nil {
 		return nil, false, fmt.Errorf("failed open cache file: %w", err)
 	}
@@ -61,7 +80,7 @@ func GetCache(nameFile, nameUser string) ([]model.Event, bool, error) {
 
 		if user.NameUser == nameUser {
 			foundUser = &user
-			if time.Since(user.CreatedAtCache) > CacheTTL {
+			if time.Since(user.CreatedAtCache) > c.CacheTTL() {
 				foundUser = nil
 				continue
 			}
@@ -76,8 +95,8 @@ func GetCache(nameFile, nameUser string) ([]model.Event, bool, error) {
 	return foundUser.Events, true, nil
 }
 
-func SetCache(nameFile string, user *model.User) error {
-	file, err := os.OpenFile(nameFile, os.O_WRONLY|os.O_APPEND, 0666)
+func (c *Cache) SetCache(user *model.User) error {
+	file, err := os.OpenFile(c.NameFile(), os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
 		return fmt.Errorf("failed open cache file: %w", err)
 	}
@@ -91,16 +110,8 @@ func SetCache(nameFile string, user *model.User) error {
 	return nil
 }
 
-func DeleteCache() error {
-	dir, err := os.UserCacheDir()
-	if err != nil {
-		return fmt.Errorf("failed get directory cache: %w", err)
-	}
-	dir = filepath.Join(dir, "github-activity")
-
-	file := filepath.Join(dir, "cache.json")
-
-	if err := os.Remove(file); err != nil {
+func (c *Cache) DeleteCache() error {
+	if err := os.Remove(c.NameFile()); err != nil {
 		return fmt.Errorf("failed clear cache: %w", err)
 	}
 	return nil

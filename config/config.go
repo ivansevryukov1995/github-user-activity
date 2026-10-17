@@ -2,28 +2,29 @@ package config
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/ivansevryukov1995/github-user-activity/internal/pkg/cache"
 )
 
 type Config struct {
-	cache string
+	cache *cache.Cache
 }
 
 // InitConfig initialization config
 func InitConfig() (*Config, error) {
 	// 1. Cache
-	name, err := cache.CacheFilePath()
+	cache, err := cache.NewCache("github-activity", "cache.json", 120*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("failed init cache: %w", err)
 	}
 
 	return &Config{
-		cache: name,
+		cache: cache,
 	}, nil
 }
 
-// Cache return name file for cache
-func (c *Config) Cache() string {
+// Cache return cache
+func (c *Config) Cache() *cache.Cache {
 	return c.cache
 }

@@ -2,19 +2,18 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/ivansevryukov1995/github-user-activity/cmd/client"
 	"github.com/ivansevryukov1995/github-user-activity/config"
 	"github.com/ivansevryukov1995/github-user-activity/internal/model"
 	"github.com/ivansevryukov1995/github-user-activity/internal/pkg"
@@ -22,7 +21,7 @@ import (
 )
 
 var (
-	githubEvents = "https://api.github.com/users/%s/events"
+	githubEvents = "https://api.github.com"
 	countEvents  = 300
 )
 
@@ -31,8 +30,14 @@ func main() {
 	flag.Parse()
 	args := flag.Args()
 
+	c, err := config.InitConfig()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
 	if *clear {
-		if err := cache.DeleteCache(); err != nil {
+		if err := c.Cache().DeleteCache(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -43,12 +48,6 @@ func main() {
 
 	if len(args) != 1 {
 		fmt.Fprintln(os.Stderr, "Need one name user-github")
-		os.Exit(1)
-	}
-
-	c, err := config.InitConfig()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 
@@ -72,7 +71,7 @@ func run(out io.Writer, user string, c *config.Config) error {
 		cancel()
 	}()
 
-	events, hasCache, err := cache.GetCache(c.Cache(), user)
+	events, hasCache, err := c.Cache().GetCache(user)
 	if err != nil {
 		if !errors.Is(err, cache.ErrUserNotFound) {
 			return fmt.Errorf("failed get cache: %w", err)
@@ -81,42 +80,27 @@ func run(out io.Writer, user string, c *config.Config) error {
 	}
 
 	if !hasCache {
-		client := &http.Client{
-			Timeout: 10 * time.Second,
-			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				IdleConnTimeout:     30 * time.Second,
-				TLSHandshakeTimeout: 5 * time.Second,
-			},
+		clt := &client.GitHubClient{
+			URL: "https://api.github.com",
 		}
 
-		urlEvents := fmt.Sprintf(githubEvents, user)
+		req := client.GitHubRequest{
+			User:        user,
+			CountEvents: countEvents,
+		}
 
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlEvents, nil)
+		events, err = clt.GetEvents(ctx, req)
 		if err != nil {
-			return fmt.Errorf("failed to create request: %w", err)
+			return fmt.Errorf("failed client: %w", err)
 		}
 
-		resp, err := client.Do(req)
-		if err != nil {
-			return fmt.Errorf("request failed: %w", err)
-		}
-
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("status code: %v", resp.StatusCode)
-		}
-
-		if err := json.NewDecoder(resp.Body).Decode(&events); err != nil {
-			return fmt.Errorf("failed decode: %w", err)
-		}
 		newUser := &model.User{
 			NameUser:       user,
 			CreatedAtCache: time.Now().UTC(),
 			Events:         events,
 		}
-		err = cache.SetCache(c.Cache(), newUser)
+
+		err = c.Cache().SetCache(newUser)
 		if err != nil {
 			return fmt.Errorf("failed set cache: %w", err)
 		}
