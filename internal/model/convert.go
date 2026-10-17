@@ -4,22 +4,22 @@ import (
 	"strings"
 )
 
-func ConvertPayload(event string, e Event) Payload {
+func ConvertPayloadToAction(event string, e Event) Action {
 	switch event {
 	case "Create":
-		return Payload{RefType: e.Payload.RefType, Action: event + "d"}
+		return Action{RefType: e.Payload.RefType, Action: event + "d"}
 	case "Delete":
-		return Payload{RefType: e.Payload.RefType, Action: event + "d"}
+		return Action{RefType: e.Payload.RefType, Action: event + "d"}
 	case "Gollum":
-		return Payload{RefType: "page", Action: event + "ed"}
+		return Action{RefType: "page", Action: event + "ed"}
 	case "Push":
-		return Payload{RefType: "commit", Action: event + "ed"}
+		return Action{RefType: "commit", Action: event + "ed"}
 	case "Watch":
-		return Payload{RefType: "repository", Action: event + "ed"}
+		return Action{RefType: "repository", Action: event + "ed"}
 	case "Issues":
 		refType := "issue"
-		return Payload{RefType: refType, Action: strings.Title(e.Payload.Action)}
+		return Action{RefType: refType, Action: strings.Title(e.Payload.Action)}
 	default:
-		return Payload{RefType: strings.ToLower(event), Action: strings.Title(e.Payload.Action)}
+		return Action{RefType: strings.ToLower(event), Action: strings.Title(e.Payload.Action)}
 	}
 }

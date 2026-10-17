@@ -27,8 +27,11 @@ func main() {
 	flag.Parse()
 	args := flag.Args()
 	if len(args) != 1 {
-		log.Fatal("Need one name user-github")
+		fmt.Fprintln(os.Stderr, "Need one name user-github")
+		os.Exit(1)
 	}
+
+	os.UserCacheDir()
 
 	if err := run(args[0], os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -82,16 +85,16 @@ func run(user string, out io.Writer) error {
 		return fmt.Errorf("failed decode: %w", err)
 	}
 
-	repoStat := make(map[string]map[model.Payload]int, countEvents)
+	repoStat := make(map[string]map[model.Action]int, countEvents)
 
 	for _, e := range events {
 		event := strings.TrimSuffix(e.Type, "Event")
 
 		if repoStat[e.Repo.Name] == nil {
-			repoStat[e.Repo.Name] = make(map[model.Payload]int)
+			repoStat[e.Repo.Name] = make(map[model.Action]int)
 		}
 
-		payload := model.ConvertPayload(event, e)
+		payload := model.ConvertPayloadToAction(event, e)
 
 		repoStat[e.Repo.Name][payload]++
 	}
