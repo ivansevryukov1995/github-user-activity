@@ -32,3 +32,9 @@ type Event struct {
 	Public    bool      `json:"public"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
+type User struct {
+	NameUser       string    `json:"name_user"`
+	CreatedAtCache time.Time `json:"created_at_cache"`
+	Events         []Event
+}

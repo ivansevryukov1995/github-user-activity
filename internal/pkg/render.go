@@ -7,7 +7,7 @@ import (
 	"github.com/ivansevryukov1995/github-user-activity/internal/model"
 )
 
-func RenderRepoStatUser(out io.Writer, repoStat map[string]map[model.Payload]int) error {
+func RenderRepoStatUser(out io.Writer, repoStat map[string]map[model.Action]int) error {
 	if len(repoStat) == 0 {
 		_, err := fmt.Fprintln(out, "No events to display.")
 		if err != nil {

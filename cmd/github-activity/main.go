@@ -2,41 +2,62 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/ivansevryukov1995/github-user-activity/cmd/client"
+	"github.com/ivansevryukov1995/github-user-activity/config"
 	"github.com/ivansevryukov1995/github-user-activity/internal/model"
 	"github.com/ivansevryukov1995/github-user-activity/internal/pkg"
+	"github.com/ivansevryukov1995/github-user-activity/internal/pkg/cache"
 )
 
 var (
-	githubEvents = "https://api.github.com/users/%s/events"
+	githubEvents = "https://api.github.com"
 	countEvents  = 300
 )
 
 func main() {
+	clear := flag.Bool("clear-cache", false, "delete file cache")
 	flag.Parse()
 	args := flag.Args()
-	if len(args) != 1 {
-		log.Fatal("Need one name user-github")
+
+	c, err := config.InitConfig()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 
-	if err := run(args[0], os.Stdout); err != nil {
+	if *clear {
+		if err := c.Cache().DeleteCache(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+
+		fmt.Fprintln(os.Stdout, "Cache clear!")
+		os.Exit(0)
+	}
+
+	if len(args) != 1 {
+		fmt.Fprintln(os.Stderr, "Need one name user-github")
+		os.Exit(1)
+	}
+
+	if err := run(os.Stdout, args[0], c); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func run(user string, out io.Writer) error {
+func run(out io.Writer, user string, c *config.Config) error {
 	// graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -50,50 +71,57 @@ func run(user string, out io.Writer) error {
 		cancel()
 	}()
 
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-		Transport: &http.Transport{
-			MaxIdleConns:        10,
-			IdleConnTimeout:     30 * time.Second,
-			TLSHandshakeTimeout: 5 * time.Second,
-		},
-	}
-
-	urlEvents := fmt.Sprintf(githubEvents, user)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlEvents, nil)
+	events, hasCache, err := c.Cache().GetCache(user)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		if !errors.Is(err, cache.ErrUserNotFound) {
+			return fmt.Errorf("failed get cache: %w", err)
+		}
+		events = make([]model.Event, countEvents)
 	}
 
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
+	if !hasCache {
+		clt := &client.GitHubClient{
+			URL: "https://api.github.com",
+		}
+
+		req := client.GitHubRequest{
+			User:        user,
+			CountEvents: countEvents,
+		}
+
+		events, err = clt.GetEvents(ctx, req)
+		if err != nil {
+			return fmt.Errorf("failed client: %w", err)
+		}
+
+		newUser := &model.User{
+			NameUser:       user,
+			CreatedAtCache: time.Now().UTC(),
+			Events:         events,
+		}
+
+		err = c.Cache().SetCache(newUser)
+		if err != nil {
+			return fmt.Errorf("failed set cache: %w", err)
+		}
 	}
 
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("status code: %v", resp.StatusCode)
-	}
-
-	events := make([]model.Event, countEvents)
-	if err := json.NewDecoder(resp.Body).Decode(&events); err != nil {
-		return fmt.Errorf("failed decode: %w", err)
-	}
-
-	repoStat := make(map[string]map[model.Payload]int, countEvents)
+	repoStat := make(map[string]map[model.Action]int, countEvents)
 
 	for _, e := range events {
 		event := strings.TrimSuffix(e.Type, "Event")
 
 		if repoStat[e.Repo.Name] == nil {
-			repoStat[e.Repo.Name] = make(map[model.Payload]int)
+			repoStat[e.Repo.Name] = make(map[model.Action]int)
 		}
 
-		payload := model.ConvertPayload(event, e)
+		payload := model.ConvertPayloadToAction(event, e)
 
 		repoStat[e.Repo.Name][payload]++
+	}
+
+	if hasCache {
+		fmt.Fprintln(out, "[CACHE]")
 	}
 
 	err = pkg.RenderRepoStatUser(out, repoStat)
