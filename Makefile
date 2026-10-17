@@ -28,8 +28,13 @@ build:
 run: build
 # 	${build_dir}/${binary_name} ivansevryukov1995
 # 	${build_dir}/${binary_name} snow-ghost
-	${build_dir}/${binary_name} valyala
-# 	${build_dir}/${binary_name} yangwenmai
+# 	${build_dir}/${binary_name} valyala
+	${build_dir}/${binary_name} yangwenmai
+
+## clear-cache: clear cache the application
+.PHONY: clear-cache
+clear-cache: build
+	${build_dir}/${binary_name} --clear-cache
 
 ## clean: clean dir bin
 .PHONY: clean
